@@ -8,10 +8,6 @@ So this is an agentic bot that generates [Galaxy](https://galaxyproject.org/) to
 
 `gxy-tool-bot` is a Python library + companion GitHub Actions workflows that automate the creation of Galaxy tool wrappers. It is **not a tool repo itself** — it's a library consumed by repos that house Galaxy tools.
 
-## Current Status
-
-This repository is under active development. The bot can plan tool wrappers, generate XML/macros/test data, and open PRs automatically. It has been tested end-to-end on real tool requests. Expect rough edges and iterate on configuration as needed.
-
 ## How it works
 
 1. **Request:** Users file a GitHub issue using the "Tool Request" issue template (structured fields for tool name, description, links, contact).
