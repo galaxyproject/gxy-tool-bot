@@ -213,7 +213,7 @@ The `GITHUB_TOKEN` (automatically provided by GitHub Actions) is used for issue 
 
 Fork PRs get no secrets on normal PR events, so `on-fork-pr-review.yml` runs on `pull_request_target` and never executes PR content: it extracts the PR's tool files as plain data and reviews them with no shell tools. Fork PRs get review only, not feedback.
 
-A maintainer requests a review by applying the `review` (or `tool-bot:review`) label — nothing runs on PR open or new pushes. Applying a label needs write access to the repo, so the requester is always a maintainer, and their login is passed to the bot as `--actor` for the `allowed_maintainers` check. Re-apply the label for a re-review after new pushes.
+A maintainer requests a review by applying the `review` (or `tool-bot:review`) label — nothing runs on PR open or new pushes. Triage users can apply labels too, so the workflow first checks that the labeler has write access; their login is also passed to the bot as `--actor` for the `allowed_maintainers` check. Only PRs against the default branch are reviewed, since `pull_request_target` runs the workflow file from the PR's base branch. Re-apply the label for a re-review after new pushes.
 
 Setup:
 
