@@ -115,32 +115,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # PR title format: "tool_dir: auto-generated tool wrapper (issue #N)"
-          PR_TITLE=$(gh pr view $PR_NUMBER --json title --jq '.title' 2>/dev/null || echo "")
-          TOOL_DIR=$(echo "$PR_TITLE" | cut -d':' -f1 | xargs)
-          # Fallback: check for .tool-name in the PR branch (find, not a
-          # glob test — a bare tools/*/ glob errors on multiple matches).
-          TOOL_NAME_FILE=$(find tools -maxdepth 2 -name .tool-name 2>/dev/null | head -1)
-          if [ -z "$TOOL_DIR" ] && [ -n "$TOOL_NAME_FILE" ]; then
-            TOOL_DIR=$(head -1 "$TOOL_NAME_FILE" 2>/dev/null)
-          fi
-          # Fallback: derive from the PR's changed files under tools/
-          if [ -z "$TOOL_DIR" ]; then
-            TOOL_DIR=$(gh pr diff $PR_NUMBER --name-only | grep -oP '^tools/\K[^/]+' | sort -u | head -1)
-            [ -n "$TOOL_DIR" ] && echo "Derived tool directory from PR diff: $TOOL_DIR"
-          fi
-          if [ -z "$TOOL_DIR" ]; then
-            echo "Could not determine tool directory from PR title, .tool-name, or changed files"
-            exit 1
-          fi
-          # TOOL_DIR feeds 'rm -rf tools/$TOOL_DIR' later — reject anything
-          # that isn't a plain directory name (traversal via a retitled PR).
-          # The first character must not be a dot: '.' and '..' would pass
-          # [A-Za-z0-9_.-] but resolve outside tools/.
-          if [[ ! "$TOOL_DIR" =~ ^[A-Za-z0-9_-][A-Za-z0-9_.-]*$ ]]; then
-            echo "Refusing unsafe tool directory name: $TOOL_DIR"
-            exit 1
-          fi
+          # The tool folder the PR's changed files are in (nested ones too, e.g.
+          # tools/image_processing/imagej2); the title's "name:" prefix picks
+          # one when the PR changes several. Fails with a message otherwise.
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate \
+            --jq '.[] | .filename, (.previous_filename // empty) | @json' > "$RUNNER_TEMP/changed-files"
+          PR_TITLE=$(gh pr view $PR_NUMBER --json title --jq '.title')
+          TOOL_DIR=$(gxy-tool-bot find-tool-dir --changed-files "$RUNNER_TEMP/changed-files" --title="$PR_TITLE")
           echo "tool_dir=$TOOL_DIR" >> $GITHUB_OUTPUT
           echo "Found tool directory: $TOOL_DIR"
       # planemo_test / run_in_conda run model-chosen commands next to the LLM
@@ -174,7 +155,8 @@ jobs:
           # opens the tool dir itself to it.
           chmod 755 "$WORK"
           echo "GXY_TOOL_BOT_EXEC_USER=gxyexec" >> "$GITHUB_ENV"
-          echo "WORK_TOOL_DIR=$WORK/$TOOL_DIR" >> "$GITHUB_ENV"
+          # cp puts the tool dir at $WORK/<last part>, also for a nested one.
+          echo "WORK_TOOL_DIR=$WORK/$(basename "$TOOL_DIR")" >> "$GITHUB_ENV"
       - name: Address feedback
         id: address
         # Failures are reported by the publish job.
@@ -295,7 +277,8 @@ jobs:
         if: env.FIX_OUTCOME == 'success'
         run: |
           RESULT="$RUNNER_TEMP/result/tool"
-          if [[ ! "$TOOL_DIR" =~ ^[A-Za-z0-9_-][A-Za-z0-9_.-]*$ ]]; then
+          # Path parts as find-tool-dir allows them (no '.', '..' or leading dot).
+          if [[ ! "$TOOL_DIR" =~ ^[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*$ ]]; then
             echo "::error::Refusing unsafe tool directory name: $TOOL_DIR"; exit 1
           fi
           if [ ! -d "$RESULT" ]; then

@@ -86,36 +86,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # PR title format: "tool_dir: auto-generated tool wrapper (issue #N)"
-          PR_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title --jq '.title' 2>/dev/null || echo "")
-          TOOL_DIR=$(echo "$PR_TITLE" | cut -d':' -f1 | xargs)
-          # Fallback: check for .tool-name in the PR branch (find, not a
-          # glob test — a bare tools/*/ glob errors on multiple matches).
-          TOOL_NAME_FILE=$(find tools -maxdepth 2 -name .tool-name 2>/dev/null | head -1)
-          if [ -z "$TOOL_DIR" ] && [ -n "$TOOL_NAME_FILE" ]; then
-            TOOL_DIR=$(head -1 "$TOOL_NAME_FILE" 2>/dev/null)
-          fi
-          # Fallback: derive from the PR's changed files under tools/
-          if [ -z "$TOOL_DIR" ]; then
-            TOOL_DIR=$(gh pr diff ${{ github.event.pull_request.number }} --name-only | grep -oP '^tools/\K[^/]+' | sort -u | head -1)
-            [ -n "$TOOL_DIR" ] && echo "Derived tool directory from PR diff: $TOOL_DIR"
-          fi
-          # Fallback: find directories with .xml files under tools/
-          if [ -z "$TOOL_DIR" ]; then
-            TOOL_DIR=$(find tools/ -name "*.xml" -not -name "macros.xml" -exec dirname {} \; 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-          fi
-          if [ -z "$TOOL_DIR" ]; then
-            echo "Could not determine tool directory from PR title, .tool-name, or XML files"
-            exit 1
-          fi
-          # TOOL_DIR feeds paths under tools/ later — reject anything that
-          # isn't a plain directory name (traversal via a retitled PR).
-          # The first character must not be a dot: '.' and '..' would pass
-          # [A-Za-z0-9_.-] but resolve outside tools/.
-          if [[ ! "$TOOL_DIR" =~ ^[A-Za-z0-9_-][A-Za-z0-9_.-]*$ ]]; then
-            echo "Refusing unsafe tool directory name: $TOOL_DIR"
-            exit 1
-          fi
+          # The tool folder the PR's changed files are in (nested ones too, e.g.
+          # tools/image_processing/imagej2); the title's "name:" prefix picks
+          # one when the PR changes several. Fails with a message otherwise.
+          gh api "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" --paginate \
+            --jq '.[] | .filename, (.previous_filename // empty) | @json' > "$RUNNER_TEMP/changed-files"
+          PR_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title --jq '.title')
+          TOOL_DIR=$(gxy-tool-bot find-tool-dir --changed-files "$RUNNER_TEMP/changed-files" --title="$PR_TITLE")
           echo "tool_dir=$TOOL_DIR" >> $GITHUB_OUTPUT
           echo "Found tool directory: $TOOL_DIR"
       - name: Review tool files
